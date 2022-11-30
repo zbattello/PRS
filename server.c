@@ -9,6 +9,8 @@
 #include <netinet/in.h>
 #include <arpa/inet.h>
 
+#define RCVSIZE 1494
+
 int max(int x, int y)
 {
     if (x > y)
@@ -19,11 +21,15 @@ int max(int x, int y)
 
 int main(int argc, char *argv[])
 {
-    if (argc != 3)
+    if (argc != 2)
     {
-        printf("Utilisation : ./server <port UDP> <port UDP mess>\n");
+        printf("Utilisation : ./server <port UDP> \n");
         exit(0);
     }
+    int random_number;
+    char msg_synack[7] = "SYN-ACK";
+    char synAckBuff[64];
+    char string2[8];
 
     int udp_sock, udp_mess, maxfdp1;
     int reuse = 1;
@@ -48,15 +54,7 @@ int main(int argc, char *argv[])
     my_addr_udp.sin_addr.s_addr = INADDR_ANY;
     setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
 
-    printf("Socket UDP : %d\n", udp_mess);
-    memset((char *)&mess_udp, 0, sizeof(mess_udp));
-    mess_udp.sin_family = AF_INET;
-    mess_udp.sin_port = htons(atoi(argv[2]));
-    mess_udp.sin_addr.s_addr = INADDR_ANY;
-    setsockopt(udp_mess, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
     bind(udp_sock, (struct sockaddr *)&my_addr_udp, sizeof(my_addr_udp));
-    bind(udp_mess, (struct sockaddr *)&mess_udp, sizeof(mess_udp));
 
     // structure pour récupérer infos clients
     struct sockaddr_in c_addr;
@@ -68,6 +66,18 @@ int main(int argc, char *argv[])
 
     while (1)
     {
+        random_number = rand() % 4444 + 3333;
+        printf("number : %d\n", random_number);
+
+        printf("Socket UDP Mess: %d\n", udp_mess);
+        memset((char *)&mess_udp, 0, sizeof(mess_udp));
+        mess_udp.sin_family = AF_INET;
+        mess_udp.sin_port = htons(random_number);
+        mess_udp.sin_addr.s_addr = INADDR_ANY;
+        setsockopt(udp_mess, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+
+        bind(udp_mess, (struct sockaddr *)&mess_udp, sizeof(mess_udp));
+
         // clear the descriptor set        
         FD_ZERO(&f_des);
         FD_SET(udp_sock, &f_des);
@@ -80,6 +90,12 @@ int main(int argc, char *argv[])
 
         printf("Connection/message detected \n");
 
+        snprintf(string2, 6, "%04d", random_number);
+        memcpy(synAckBuff, msg_synack, 7);
+        memcpy(synAckBuff + 7, string2, 7);
+
+        printf("Message on synack: %s\n", synAckBuff);
+
         if (FD_ISSET(udp_sock, &f_des))
         {
             printf("UDP connection detected \n");
@@ -87,13 +103,10 @@ int main(int argc, char *argv[])
             char msg_udp[8];
             recvfrom(udp_sock, (char *)msg_udp, 8, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
             printf("Message on UDP socket : %s\n", msg_udp);
-            char msg_synack[8] = "SYNACK";
-            char msg_port[8];
-            sprintf(msg_port, "%d", atoi(argv[2]));
+
             char msg_ack[8];
             if (strcmp(msg_udp, "SYN")==0){
-                sendto(udp_sock, msg_synack, 8, 0, (struct sockaddr *)&c_addr, c_addr_size);
-                sendto(udp_sock, msg_port, 8, 0, (struct sockaddr *)&c_addr, c_addr_size);
+                sendto(udp_sock, synAckBuff, RCVSIZE, 0, (struct sockaddr *)&c_addr, c_addr_size);
                 recvfrom(udp_sock, (char *)msg_ack, 8, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
                 printf("Message on UDP socket : %s\n", msg_ack);
             

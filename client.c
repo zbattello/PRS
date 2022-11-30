@@ -7,7 +7,7 @@
 #include <arpa/inet.h>
 #include <unistd.h>
 
-#define buff_size 9
+#define buff_size 64
 int main(int argc, char *argv[])
 {
     if (argc != 3)
@@ -38,17 +38,17 @@ int main(int argc, char *argv[])
     char msg[buff_size] = "SYN";
     char msg_rcv[buff_size];
     char msg_ack[buff_size] = "ACK";
-    char msg_port[buff_size];
+    char * msg_port;
     char msg_test[buff_size] = "hi";
     int portmess;
     int i;
 
     sendto(sock, msg, buff_size, 0, (struct sockaddr *)&my_addr, taille);
-    recvfrom(sock, (char *) msg_rcv, 8, MSG_WAITALL, (struct sockaddr *)&my_addr, &taille);
-    recvfrom(sock, (char *) msg_port, 8, MSG_WAITALL, (struct sockaddr *)&my_addr, &taille);
+    recvfrom(sock, (char *) msg_rcv, buff_size, MSG_WAITALL, (struct sockaddr *)&my_addr, &taille);
     printf("Message on UDP socket : %s\n", msg_rcv);
-    
-
+    msg_port = strtok(msg_rcv, "K");
+    msg_port = strtok(NULL, "K");
+    printf("port: %s\n", msg_port);
     sendto(sock, msg_ack, buff_size, 0, (struct sockaddr *)&my_addr, taille);
 
     //MAJ addr
