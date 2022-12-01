@@ -117,10 +117,64 @@ int main(int argc, char *argv[])
         {
             printf("UDP message detected\n");
 
-            char msg[8];
-            recvfrom(udp_mess, (char *)msg, 8, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
-            printf("Message on UDP socket messages : %s\n", msg);
+            char file_name[64];
+            recvfrom(udp_mess, (char *)file_name, 64, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
+            printf("File path : %s\n", file_name);
+
+            // Overture du fichier a envoyer
+            FILE* fichier = NULL;
+            fichier = fopen(file_name, "r");
+
+            if (fichier == NULL)
+            {
+                printf("Erreur ouverture fichier\n");
+                exit(0);
+            }
+
+            // Lecture du fichier et generations des sequences
+
+            int numSequence = 0; //Le numero de la sequence
+
+            int caractere;
+            int k;
+
+            do
+            {
+                numSequence++;
+                char sequence[256] = {0}; //La sequence a transmettre
+                char strSequence[6]= {0}; //Le numero en format string
+
+                // Convertion du num de sequence en string
+                sprintf(strSequence, "%d", numSequence);
+
+                // Ajout du num de sequence dans les 6 premiers octets
+                for (k = 0; k < 6; k++)
+                {
+                    sequence[k] = (strSequence[k] != 0) ? strSequence[k] : 48;
+                }
+
+                // Replissage de la sequence avec les octets a envoyer
+                do
+                {
+                    caractere = fgetc(fichier);
+                    sequence[k] = caractere;
+                    k++;
+                } while (caractere != EOF && k < 256);
+
+                // Envoie de la sequence
+                //printf("SEQUENCE:\n%s\n", sequence);
+
+                // TODO : attendre l'aquitement de la sequence
+
+            } while (caractere != EOF);
+
+            //Envoie de la sequence de fin
+            printf("FIN\n");
+
+            //Fermeture du fichier
+            fclose(fichier);
         }
+        
         
     };
 }

@@ -39,7 +39,7 @@ int main(int argc, char *argv[])
     char msg_rcv[buff_size];
     char msg_ack[buff_size] = "ACK";
     char * msg_port;
-    char msg_test[buff_size] = "hi";
+    char msg_test[buff_size] = "./test.pdf";
     int portmess;
     int i;
 
