@@ -36,7 +36,7 @@ int main (int argc, char *argv[])
 
     if (argc != 2)
     {
-        printf("Utilisation : ./new_server <port>\n");
+        printf("Utilisation : ./server <port>\n");
         return -1;
     }
 
