@@ -7,7 +7,7 @@
 
 #define RCVSIZE 1024
 #define windowSize 1
-#define TO 20000
+#define TIMEOUT 200000
 
 // TODO procedure d'erreur : fermeture des socket, ...
 
@@ -15,7 +15,8 @@ int main (int argc, char *argv[])
 {
     //timeout
     struct timeval timeout;
-    timeout.tv_usec = TO;
+    timeout.tv_sec = 0;
+    timeout.tv_usec = TIMEOUT;
 
     //fdset
     fd_set readfs;
@@ -180,9 +181,7 @@ int main (int argc, char *argv[])
 
             FD_ZERO(&readfs);
             FD_SET(client_socket, &readfs);
-            int i =0;
-            int s;
-            
+            int s, i = 0;
 
             // Lecture du fichier et envoie des trames
             // Tant que la taille des elements lu n'est pas nule (fin de fichier)
@@ -197,7 +196,6 @@ int main (int argc, char *argv[])
                 // Segment d'aquitement
                 char ack_segment[9] = "ACK";
                 strcat(ack_segment, segment);
-                printf("ackseg %s.\n", ack_segment);
 
                 // Ajout du bloc de fichier dans la suite du segment
                 strcat(segment, fileBuffer);
@@ -208,6 +206,7 @@ int main (int argc, char *argv[])
                     // Envoie de la trame
                     sendto(client_socket, segment, size + 6, 0,(struct sockaddr*)&client_adress, alen);
 
+                    printf("Segment %d envoye.\n", number_segment);
 
                     FD_ZERO(&readfs);
                     FD_SET(client_socket, &readfs);
@@ -215,11 +214,17 @@ int main (int argc, char *argv[])
                     s = select(client_socket+1, &readfs, NULL, NULL, &timeout);
 
                     if (s > 0) {
-                        timeout.tv_usec = TO;
                         // Attente de l'aquitement de la trame
                         recvfrom(client_socket, msgBufferClient, RCVSIZE, 0, (struct sockaddr *)&client_adress, &alen);
-                        printf("reçu %s\n", msgBufferClient);
+                        printf("Aquitement %s recu.\n", msgBufferClient);
                     }
+                    else
+                    {
+                        printf("Aquitement du semgment %d non recu.\n", number_segment);
+                    }
+
+                    timeout.tv_sec = 0;
+                    timeout.tv_usec = TIMEOUT;
                 }
             }
 
