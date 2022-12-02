@@ -1,180 +1,237 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <unistd.h>
-#include <string.h>
-#include <sys/types.h>
 #include <sys/socket.h>
-#include <sys/select.h>
-#include <sys/time.h>
 #include <netinet/in.h>
-#include <arpa/inet.h>
+#include <string.h>
 
-#define RCVSIZE 1494
+#define RCVSIZE 1024
+#define windowSize 1
+#define TO 20000
 
-int max(int x, int y)
+// TODO procedure d'erreur : fermeture des socket, ...
+
+int main (int argc, char *argv[])
 {
-    if (x > y)
-        return x;
-    else
-        return y;
-}
+    //timeout
+    struct timeval timeout;
+    timeout.tv_usec = TO;
 
-int main(int argc, char *argv[])
-{
+    //fdset
+    fd_set readfs;
+    FD_ZERO(&readfs);
+
+    // Buffer de reception publique
+    char msgBufferPublic[RCVSIZE];
+
+    // Buffer de lecture du fichier
+    char fileBuffer[RCVSIZE];
+
+    // Adresse publique
+    struct sockaddr_in public_adress;
+    socklen_t alen = sizeof(public_adress);
+
+    // Adresse client
+    struct sockaddr_in client_adress;
+
     if (argc != 2)
     {
-        printf("Utilisation : ./server <port UDP> \n");
-        exit(0);
+        printf("Utilisation : ./new_server <port>\n");
+        return -1;
     }
-    int random_number;
-    char msg_synack[7] = "SYN-ACK";
-    char synAckBuff[64];
-    char string2[8];
 
-    int udp_sock, udp_mess, maxfdp1;
-    int reuse = 1;
-    struct sockaddr_in my_addr_udp, mess_udp;
-    fd_set f_des;
+    // Obtention du port publique
+    int public_port = atoi(argv[1]);
 
-    // initialisation socket UDP
+    // Creation de la socket publique
+    int public_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-    udp_sock = socket(AF_INET, SOCK_DGRAM, 0);
-    udp_mess = socket(AF_INET, SOCK_DGRAM, 0);
-
-    if (udp_sock < 0 || udp_mess < 0)
+    if (public_socket < 0)
     {
-        printf("Error creation socket UDP\n");
-        exit(0);
+        perror("Erreur creation socket publique.\n");
+        return -1;
     }
 
-    printf("Socket UDP : %d\n", udp_sock);
-    memset((char *)&my_addr_udp, 0, sizeof(my_addr_udp));
-    my_addr_udp.sin_family = AF_INET;
-    my_addr_udp.sin_port = htons(atoi(argv[1]));
-    my_addr_udp.sin_addr.s_addr = INADDR_ANY;
-    setsockopt(udp_sock, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
+    // Permet a la socket d'etre reutilise immediatement en cas de redemarage
+    int option = 1;
+    setsockopt(public_socket, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
 
-    bind(udp_sock, (struct sockaddr *)&my_addr_udp, sizeof(my_addr_udp));
+    // Initialisation de l'adresse publique
+    public_adress.sin_family = AF_INET;
+    public_adress.sin_addr.s_addr = INADDR_ANY;
+    public_adress.sin_port = htons(public_port);
 
-    // structure pour récupérer infos clients
-    struct sockaddr_in c_addr;
-    int c_addr_size = sizeof(c_addr);
+    // Connexion socket et adresse publique
+    if (bind(public_socket, (struct sockaddr *)&public_adress, sizeof(public_adress)) < 0)
+    {
+        perror("Erreur connexion socket-adresse publique.\n");
+        close(public_socket);
+        return -1;
+    }
 
-
-    // get max 
-    maxfdp1 = max(udp_sock, udp_mess) + 1;
+    // Port unique du client
+    int client_port = 8000;
+    char str_client_port[4];
 
     while (1)
     {
-        random_number = rand() % 4444 + 3333;
-        printf("number : %d\n", random_number);
+        // Creation de la socket client
+        int client_socket = socket(AF_INET, SOCK_DGRAM, 0);
 
-        printf("Socket UDP Mess: %d\n", udp_mess);
-        memset((char *)&mess_udp, 0, sizeof(mess_udp));
-        mess_udp.sin_family = AF_INET;
-        mess_udp.sin_port = htons(random_number);
-        mess_udp.sin_addr.s_addr = INADDR_ANY;
-        setsockopt(udp_mess, SOL_SOCKET, SO_REUSEADDR, &reuse, sizeof(reuse));
-
-        bind(udp_mess, (struct sockaddr *)&mess_udp, sizeof(mess_udp));
-
-        // clear the descriptor set        
-        FD_ZERO(&f_des);
-        FD_SET(udp_sock, &f_des);
-        FD_SET(udp_mess, &f_des);
-
-        // On surveille les deux sockets maintenant
-        printf("Waiting for messages or connections\n");
-
-        select(maxfdp1, &f_des, NULL, NULL, NULL);
-
-        printf("Connection/message detected \n");
-
-        snprintf(string2, 6, "%04d", random_number);
-        memcpy(synAckBuff, msg_synack, 7);
-        memcpy(synAckBuff + 7, string2, 7);
-
-        printf("Message on synack: %s\n", synAckBuff);
-
-        if (FD_ISSET(udp_sock, &f_des))
+        if (client_socket < 0)
         {
-            printf("UDP connection detected \n");
-            
-            char msg_udp[8];
-            recvfrom(udp_sock, (char *)msg_udp, 8, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
-            printf("Message on UDP socket : %s\n", msg_udp);
-
-            char msg_ack[8];
-            if (strcmp(msg_udp, "SYN")==0){
-                sendto(udp_sock, synAckBuff, RCVSIZE, 0, (struct sockaddr *)&c_addr, c_addr_size);
-                recvfrom(udp_sock, (char *)msg_ack, 8, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
-                printf("Message on UDP socket : %s\n", msg_ack);
-            
-            }
+            perror("Erreur creation socket client.\n");
+            return -1;
         }
 
-        if (FD_ISSET(udp_mess, &f_des))
-        {
-            printf("UDP message detected\n");
+        // Permet a la socket client d'etre reutilise immediatement en cas de redemarage
+        setsockopt(client_socket, SOL_SOCKET, SO_REUSEADDR, &option, sizeof(option));
 
-            char file_name[64];
-            recvfrom(udp_mess, (char *)file_name, 64, MSG_WAITALL, (struct sockaddr *)&c_addr, &c_addr_size);
-            printf("File path : %s\n", file_name);
+        printf("Attente d'une demande de connexion d'un client sur le port %d...\n", public_port);
+
+        while ((strcmp(msgBufferPublic, "SYN") != 0))
+        {
+            recvfrom(public_socket, msgBufferPublic, RCVSIZE, 0, (struct sockaddr *)&public_adress, &alen);
+        }
+
+        printf("Demande de connexion recue.\n");
+
+        char syn_ack[11] = "SYN-ACK";
+
+        // Port unique du client
+        // incremente de 1 a chaque nouvelle connexion
+        client_port += 1;
+
+        // Convertion numero de port en string
+        sprintf(str_client_port, "%04d", client_port);
+
+        printf("Port attribue au client : %s.\n", str_client_port);
+
+        // Initialisation de l'adresse client
+        client_adress.sin_family = AF_INET;
+        client_adress.sin_addr.s_addr = INADDR_ANY;
+        client_adress.sin_port = htons(client_port);
+
+        // Connexion socket et adresse client
+        if (bind(client_socket, (struct sockaddr *)&client_adress, sizeof(client_adress)) < 0)
+        {
+            perror("Erreur connexion socket-adresse client");
+            close(client_socket);
+            close(public_socket);
+            return -1;
+        }
+
+        // Concatenation de SYN-ACK et du numero de port
+        strcat(syn_ack, str_client_port);
+
+        // Envoie du SYN-ACK avec le numero de port client
+        sendto(public_socket, syn_ack, 11, 0, (struct sockaddr *)&public_adress, alen);
+
+        printf("Attente confirmation du client...\n");
+
+        while ((strcmp(msgBufferPublic, "ACK") != 0))
+        {
+            recvfrom(public_socket, msgBufferPublic, 3, 0, (struct sockaddr *)&public_adress, &alen);
+        }
+
+        printf("Communication etablie.\n");
+
+        // Division du processus pour prendre en charge la multiconnexion
+        int n = fork();
+
+        if (n != 0) // Si on est dans le processus parent
+        {
+            close(client_socket); // On ferme la socket client et on reitere la boucle
+        }
+        else // Sinon on est dans le processus enfant
+        {
+            close(public_socket); // On ferme la socket publique
+
+            // Buffer de reception publique
+            char msgBufferClient[RCVSIZE];
+
+            // Attente de reception du nom du fichier demande
+            recvfrom(client_socket, msgBufferClient, RCVSIZE, 0, (struct sockaddr *)&client_adress, &alen);
+
+            printf("Demande recu du fichier %s.\n", msgBufferClient);
 
             // Overture du fichier a envoyer
-            FILE* fichier = NULL;
-            fichier = fopen(file_name, "r");
+            FILE* file = NULL;
+            file = fopen(msgBufferClient, "rb"); //Ouverture binaire
 
-            if (fichier == NULL)
+            if (file == NULL)
             {
-                printf("Erreur ouverture fichier\n");
-                exit(0);
+                printf("Erreur ouverture du fichier.\n");
+                return -1;
             }
 
-            // Lecture du fichier et generations des sequences
+            printf("Envoie du fichier...\n");
 
-            int numSequence = 0; //Le numero de la sequence
+            // Le numero de la trame qui sera incremente
+            int number_segment = 0;
 
-            int caractere;
-            int k;
+            // Segment d'aquitement
+            char ack_segment[9];
 
-            do
+            // Trame a envoyer
+            char segment[RCVSIZE];
+
+            int size;
+
+            FD_ZERO(&readfs);
+            FD_SET(client_socket, &readfs);
+            int i =0;
+            int s;
+            
+
+            // Lecture du fichier et envoie des trames
+            // Tant que la taille des elements lu n'est pas nule (fin de fichier)
+            while ((size = fread(fileBuffer, 1, RCVSIZE - 6, file)) > 0)
             {
-                numSequence++;
-                char sequence[256] = {0}; //La sequence a transmettre
-                char strSequence[6]= {0}; //Le numero en format string
+                // Incrementation du numero de segment               
+                number_segment++;
 
-                // Convertion du num de sequence en string
-                sprintf(strSequence, "%d", numSequence);
+                // Ajout du numero de segment au debut de la trame
+                sprintf(segment, "%06d", number_segment);
 
-                // Ajout du num de sequence dans les 6 premiers octets
-                for (k = 0; k < 6; k++)
+                // Segment d'aquitement
+                char ack_segment[9] = "ACK";
+                strcat(ack_segment, segment);
+                printf("ackseg %s.\n", ack_segment);
+
+                // Ajout du bloc de fichier dans la suite du segment
+                strcat(segment, fileBuffer);
+
+                // Tant qu'on a pas recu l'aquitement de la trame on la renvoi
+                while (strcmp(msgBufferClient, ack_segment) != 0)
                 {
-                    sequence[k] = (strSequence[k] != 0) ? strSequence[k] : 48;
+                    // Envoie de la trame
+                    sendto(client_socket, segment, size + 6, 0,(struct sockaddr*)&client_adress, alen);
+
+
+                    FD_ZERO(&readfs);
+                    FD_SET(client_socket, &readfs);
+
+                    s = select(client_socket+1, &readfs, NULL, NULL, &timeout);
+
+                    if (s > 0) {
+                        timeout.tv_usec = TO;
+                        // Attente de l'aquitement de la trame
+                        recvfrom(client_socket, msgBufferClient, RCVSIZE, 0, (struct sockaddr *)&client_adress, &alen);
+                        printf("reçu %s\n", msgBufferClient);
+                    }
                 }
+            }
 
-                // Replissage de la sequence avec les octets a envoyer
-                do
-                {
-                    caractere = fgetc(fichier);
-                    sequence[k] = caractere;
-                    k++;
-                } while (caractere != EOF && k < 256);
+            // Le transfert de fichier est termine
 
-                // Envoie de la sequence
-                //printf("SEQUENCE:\n%s\n", sequence);
+            char endMsg[3] = "FIN";
+            sendto(client_socket, endMsg, 3, 0,(struct sockaddr*)&client_adress, sizeof(client_adress));
 
-                // TODO : attendre l'aquitement de la sequence
+            printf("Fin du transfert");
 
-            } while (caractere != EOF);
-
-            //Envoie de la sequence de fin
-            printf("FIN\n");
-
-            //Fermeture du fichier
-            fclose(fichier);
+            fclose(file);
+            return 0;
         }
-        
-        
-    };
+    }
 }
