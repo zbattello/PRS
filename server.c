@@ -9,7 +9,6 @@
 #define windowSize 1
 #define TIMEOUT 200000
 
-// TODO procedure d'erreur : fermeture des socket, ...
 
 int main (int argc, char *argv[])
 {
