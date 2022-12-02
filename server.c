@@ -25,7 +25,7 @@ int main (int argc, char *argv[])
     char msgBufferPublic[RCVSIZE];
 
     // Buffer de lecture du fichier
-    char fileBuffer[RCVSIZE];
+    char fileBuffer[RCVSIZE - 6];
 
     // Adresse publique
     struct sockaddr_in public_adress;
@@ -176,7 +176,7 @@ int main (int argc, char *argv[])
             // Trame a envoyer
             char segment[RCVSIZE];
 
-            int size;
+            int size = 1;
 
             FD_ZERO(&readfs);
             FD_SET(client_socket, &readfs);
@@ -197,13 +197,13 @@ int main (int argc, char *argv[])
                 strcat(ack_segment, segment);
 
                 // Ajout du bloc de fichier dans la suite du segment
-                strcat(segment, fileBuffer);
+                memcpy(segment+6, fileBuffer, size);
 
                 // Tant qu'on a pas recu l'aquitement de la trame on la renvoi
                 while (strcmp(msgBufferClient, ack_segment) != 0)
                 {
                     // Envoie de la trame
-                    sendto(client_socket, segment, size + 6, 0,(struct sockaddr*)&client_adress, alen);
+                    sendto(client_socket, segment, size + 6, 0, (struct sockaddr*)&client_adress, alen);
 
                     printf("Segment %d envoye.\n", number_segment);
 
