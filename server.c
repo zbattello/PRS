@@ -5,8 +5,14 @@
 #include <netinet/in.h>
 #include <string.h>
 
+// Taille enoctet des segments
 #define RCVSIZE 1024
-#define windowSize 1
+
+// Nombre de segment par fenetre
+#define WINSIZE 10
+
+// Delai d'attente en micro seconde
+// avant renvoi de la trame
 #define TIMEOUT 200000
 
 
