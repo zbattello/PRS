@@ -8,30 +8,21 @@
 // Taille enoctet des segments
 #define RCVSIZE 1024
 
-// Nombre de segment par fenetre
-#define WINSIZE 10
+// Nombre de segments par fenetre
+#define WINSIZE 100
 
-// Delai d'attente en micro seconde
+// Delai d'attente en micro-secondes
 // avant renvoi de la trame
-#define TIMEOUT 200000
+#define TIMEOUT 2000
 
 
 int main (int argc, char *argv[])
 {
-    //timeout
-    struct timeval timeout;
-    timeout.tv_sec = 0;
-    timeout.tv_usec = TIMEOUT;
-
-    //fdset
-    fd_set readfs;
-    FD_ZERO(&readfs);
-
-    // Buffer de reception publique
-    char msgBufferPublic[RCVSIZE];
-
-    // Buffer de lecture du fichier
-    char fileBuffer[RCVSIZE - 6];
+    if (argc != 2)
+    {
+        printf("Utilisation : ./server <port>\n");
+        return -1;
+    }
 
     // Adresse publique
     struct sockaddr_in public_adress;
@@ -40,14 +31,24 @@ int main (int argc, char *argv[])
     // Adresse client
     struct sockaddr_in client_adress;
 
-    if (argc != 2)
-    {
-        printf("Utilisation : ./server <port>\n");
-        return -1;
-    }
+    // Buffer de reception publique
+    char msgBufferPublic[RCVSIZE];
+
+    // Buffer de lecture du fichier
+    char fileBuffer[RCVSIZE - 6];
+
+    // timeout
+    struct timeval timeout;
+
+    //fdset pour le select
+    fd_set readfs;
 
     // Obtention du port publique
     int public_port = atoi(argv[1]);
+
+    // Port unique du client
+    int client_port = 8000; // Sera incremente a chaque client
+    char str_client_port[4];
 
     // Creation de la socket publique
     int public_socket = socket(AF_INET, SOCK_DGRAM, 0);
@@ -75,10 +76,6 @@ int main (int argc, char *argv[])
         return -1;
     }
 
-    // Port unique du client
-    int client_port = 8000;
-    char str_client_port[4];
-
     while (1)
     {
         // Creation de la socket client
@@ -102,8 +99,6 @@ int main (int argc, char *argv[])
 
         printf("Demande de connexion recue.\n");
 
-        char syn_ack[11] = "SYN-ACK";
-
         // Port unique du client
         // incremente de 1 a chaque nouvelle connexion
         client_port += 1;
@@ -126,6 +121,8 @@ int main (int argc, char *argv[])
             close(public_socket);
             return -1;
         }
+
+        char syn_ack[11] = "SYN-ACK";
 
         // Concatenation de SYN-ACK et du numero de port
         strcat(syn_ack, str_client_port);
@@ -153,7 +150,7 @@ int main (int argc, char *argv[])
         {
             close(public_socket); // On ferme la socket publique
 
-            // Buffer de reception publique
+            // Buffer de reception du client
             char msgBufferClient[RCVSIZE];
 
             // Attente de reception du nom du fichier demande
@@ -176,61 +173,153 @@ int main (int argc, char *argv[])
             // Le numero de la trame qui sera incremente
             int number_segment = 0;
 
-            // Segment d'aquitement
-            char ack_segment[9];
+            // Le numero de la fenetre qui sera incremente
+            int number_window = 0;
 
-            // Trame a envoyer
-            char segment[RCVSIZE];
+            // La fenetre a envoyer de segments
+            char window[WINSIZE][RCVSIZE];
+
+            // Nombre de segment envoye
+            int segment_send = 0;
+
+            // Nombre de segment aquite
+            int segment_ack = 0;
 
             int size = 1;
+            int win_size;
 
-            FD_ZERO(&readfs);
-            FD_SET(client_socket, &readfs);
-            int s, i = 0;
+            // Liste des numeros de segment
+            int tab_segment[WINSIZE];
+            int tab_size[WINSIZE];
 
-            // Lecture du fichier et envoie des trames
-            // Tant que la taille des elements lu n'est pas nule (fin de fichier)
-            while ((size = fread(fileBuffer, 1, RCVSIZE - 6, file)) > 0)
+            int k;
+
+            // Lecture et transfert du fichier
+
+            // Tant qu'il reste des octets a lire dans le fichier
+            while (size > 0)
             {
-                // Incrementation du numero de segment               
-                number_segment++;
+                printf("\t\tNombre d'ACK ok : %d.\n", segment_ack);
 
-                // Ajout du numero de segment au debut de la trame
-                sprintf(segment, "%06d", number_segment);
+                number_window++;
 
-                // Segment d'aquitement
-                char ack_segment[9] = "ACK";
-                strcat(ack_segment, segment);
-
-                // Ajout du bloc de fichier dans la suite du segment
-                memcpy(segment+6, fileBuffer, size);
-
-                // Tant qu'on a pas recu l'aquitement de la trame on la renvoi
-                while (strcmp(msgBufferClient, ack_segment) != 0)
+                printf("\tGeneration de la fenetre %d.\n", number_window);
+                // Generation de la liste des trames a envoyer (la fenetre)
+                for (k = 0; k < WINSIZE; k++)
                 {
-                    // Envoie de la trame
-                    sendto(client_socket, segment, size + 6, 0, (struct sockaddr*)&client_adress, alen);
+                    // Incrementation du numero de segment               
+                    number_segment++;
 
-                    printf("Segment %d envoye.\n", number_segment);
+                    printf("\t\tCreation du segment %d.\n", number_segment);
 
-                    FD_ZERO(&readfs);
-                    FD_SET(client_socket, &readfs);
+                    // Lecture de (RCVSIZE-6) octets du fichier
+                    size = fread(fileBuffer, 1, RCVSIZE - 6, file);
 
-                    s = select(client_socket+1, &readfs, NULL, NULL, &timeout);
+                    printf("\t\t\tLecture de %d octets.\n", size);
 
-                    if (s > 0) {
-                        // Attente de l'aquitement de la trame
-                        recvfrom(client_socket, msgBufferClient, RCVSIZE, 0, (struct sockaddr *)&client_adress, &alen);
-                        printf("Aquitement %s recu.\n", msgBufferClient);
-                    }
-                    else
+                    tab_segment[k] = number_segment;
+                    tab_size[k] = size;
+
+                    // Si tout les octets ont ete lu
+                    if (size == 0)
                     {
-                        printf("Aquitement du semgment %d non recu.\n", number_segment);
+                        printf("\t\t\tPlus d'octet a lire. Fin de la generation de la fenetre.\n");
+                        // On sort de la boucle
+                        break;
                     }
 
-                    timeout.tv_sec = 0;
-                    timeout.tv_usec = TIMEOUT;
+                    // Ajout du numero de segment au debut de la trame
+                    sprintf(window[k], "%06d", number_segment);
+
+                    // Ajout du bloc de fichier dans la suite du segment
+                    memcpy(window[k] + 6, fileBuffer, size);
                 }
+
+                if (tab_size[0] == 0) {
+                    printf("\t\tLa nouvelle fenetre est vide de base. Plus rien a envoyer.\n");
+                    break;
+                }
+
+                // La taille de la fenetre
+                int win_size = k;
+
+                printf("\t\tTaille de la fenetre %d: %d.\n", number_window, win_size);
+
+                // Tant que le plus grand numero d'ACK recu ne
+                // corespond pas au dernier segment de la fenetre
+                do {
+                    printf("\t\tNombre d'ACK ok : %d.\n", segment_ack);
+
+                    printf("\tTransmission de la fenetre %d.\n", number_window);
+
+                    // Envoie des trames de la fenetre
+                    // a partir du dernier ACK recu
+                    for (int i = segment_ack % WINSIZE; i < win_size; i++)
+                    {
+                        printf("\t\tEnvoie du segment %d.\n", tab_segment[i]);
+
+                        // Envoie de la trame
+                        sendto(client_socket, window[i], tab_size[i] + 6, 0, (struct sockaddr*)&client_adress, alen);
+
+                        // MaJ du nombre de segment envoye
+                        segment_send = (tab_segment[i] > segment_send) ? tab_segment[i] : segment_send;
+                    }
+
+                    printf("\tNombre de segment envoie : %d.\n", segment_send);
+
+                    printf("\tReception des ACK de la fenetre %d.\n", number_window);
+
+                    // Reception des ACK
+                    do {
+                        FD_ZERO(&readfs);
+                        FD_SET(client_socket, &readfs);
+
+                        // Reinitialisation du delai
+                        timeout.tv_sec = 0;
+                        timeout.tv_usec = TIMEOUT;
+
+                        int s = select(client_socket+1, &readfs, NULL, NULL, &timeout);
+
+                        // Si on a recu un ACK
+                        if (s > 0)
+                        {
+                            // Reception de l'aquitement de la trame
+                            recvfrom(client_socket, msgBufferClient, RCVSIZE, 0, (struct sockaddr *)&client_adress, &alen);
+
+                            // Extraction du numero d'ACK
+                            char str_ack[6];
+                            int number_ack;
+                            for (int j = 0; j < 6; j++)
+                            {
+                                str_ack[j] = msgBufferClient[j+3];
+                            }
+                            number_ack = atoi(str_ack);
+
+                            printf("\t\tReception de l'aquitement %d.\n", number_ack);
+
+                            // Si le numero d'ACK est le plus grand
+                            if (number_ack > segment_ack)
+                            {
+                                printf("\t\t\tMise a jour de nombre d'ACK ok.\n");
+
+                                // Alors mise-a-jour du nombre d'ACK recu
+                                segment_ack = number_ack;
+                            }
+                        }
+
+                        // Si on a rien recu avant le timeout
+                        else
+                        {
+                            printf("\t\tAucun aquitement recu. Recommencement de la transmission.\n");
+                            break;
+                        }
+
+                        // Tant que le nombre d'aquitement recu est inferieur au nombre de segment envoye
+                    } while (segment_ack < segment_send);
+
+                } while (segment_ack < segment_send);
+
+                printf("\tFin de la transmission de la fenetre %d.\n", number_window);
             }
 
             // Le transfert de fichier est termine
